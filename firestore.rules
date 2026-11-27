@@ -1,0 +1,104 @@
+rules_version = '2';
+
+// Goldfish: profiles, friends, shared chapters and teach-offs.
+// Deploy with `firebase deploy --only firestore:rules`, or paste into the Firebase console
+// under Firestore Database > Rules.
+//
+// Every document keeps its content as a JSON string in `body`, written by the app's GoldfishCore types.
+// Fields the rules need to check (owners and participants) sit beside it.
+// Nothing can be listed except your own requests, your own friends and your own teach-offs.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function me() {
+      return request.auth.uid;
+    }
+
+    function bodyOK() {
+      return request.resource.data.body is string && request.resource.data.body.size() < 900000;
+    }
+
+    function onlyBody() {
+      return request.resource.data.keys().hasOnly(['body']);
+    }
+
+    // Name, fish name, fire and mastered count. Read by ID only: profiles cannot be listed or searched.
+    match /profiles/{uid} {
+      allow get: if signedIn();
+      allow create, update: if signedIn() && me() == uid && bodyOK() && onlyBody();
+      allow delete: if signedIn() && me() == uid;
+    }
+
+    // Friend code to user ID. A code can be created once and never overwritten,
+    // so a taken code is refused and the app picks another.
+    match /friendCodes/{code} {
+      allow get: if signedIn();
+      allow create: if signedIn() && request.resource.data.uid == me()
+        && request.resource.data.keys().hasOnly(['uid']);
+      allow delete: if signedIn() && resource.data.uid == me();
+    }
+
+    // A request from `fromUid`, stored under the person it is sent to.
+    match /requests/{toUid}/incoming/{fromUid} {
+      allow read: if signedIn() && (me() == toUid || me() == fromUid);
+      allow create: if signedIn() && me() == fromUid && fromUid != toUid && bodyOK() && onlyBody();
+      allow delete: if signedIn() && (me() == toUid || me() == fromUid);
+    }
+
+    // Each student's friends list. An entry can only be made while a request between the two exists,
+    // so nobody can add themselves to someone else's list. Accepting writes both entries and deletes the
+    // request in one batch; `exists` sees the request because it reads the state before the batch.
+    match /friends/{owner}/list/{friend} {
+      allow read: if signedIn() && me() == owner;
+      allow create: if signedIn() && bodyOK() && onlyBody() && (
+        (me() == owner && exists(/databases/$(database)/documents/requests/$(owner)/incoming/$(friend)))
+        || (me() == friend && exists(/databases/$(database)/documents/requests/$(friend)/incoming/$(owner)))
+      );
+      allow delete: if signedIn() && (me() == owner || me() == friend);
+    }
+
+    // A chapter and its Hidden Exam, behind an 8-character code. Anyone signed in who knows the code
+    // can read it; it cannot be listed. Never updated: sharing again after a change makes a new code.
+    match /sharedChapters/{code} {
+      allow get: if signedIn();
+      allow create: if signedIn() && request.resource.data.ownerUid == me() && bodyOK()
+        && request.resource.data.keys().hasOnly(['ownerUid', 'body']);
+      allow delete: if signedIn() && resource.data.ownerUid == me();
+    }
+
+    // A teach-off between two friends.
+    match /challenges/{cid} {
+      allow read: if signedIn() && (resource.data.fromUid == me() || resource.data.toUid == me());
+      allow create: if signedIn() && request.resource.data.fromUid == me()
+        && request.resource.data.toUid != me()
+        && exists(/databases/$(database)/documents/friends/$(request.auth.uid)/list/$(request.resource.data.toUid))
+        && bodyOK()
+        && request.resource.data.keys().hasOnly(['fromUid', 'toUid', 'body']);
+      allow delete: if signedIn() && (resource.data.fromUid == me() || resource.data.toUid == me());
+
+      // Each side's verdicts. Your friend's result stays hidden until yours is in, so neither
+      // score can anchor the other.
+      match /results/{uid} {
+        function before() {
+          return get(/databases/$(database)/documents/challenges/$(cid)).data;
+        }
+        // `getAfter` also sees a challenge created in the same batch as its first result.
+        function after() {
+          return getAfter(/databases/$(database)/documents/challenges/$(cid)).data;
+        }
+        allow get: if signedIn()
+          && (before().fromUid == me() || before().toUid == me())
+          && (me() == uid || exists(/databases/$(database)/documents/challenges/$(cid)/results/$(me())));
+        allow create, update: if signedIn() && me() == uid
+          && (after().fromUid == me() || after().toUid == me())
+          && bodyOK() && onlyBody();
+        allow delete: if signedIn() && me() == uid;
+      }
+    }
+  }
+}

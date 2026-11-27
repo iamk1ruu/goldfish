@@ -1,0 +1,56 @@
+# Free for public repositories Runs the core tests, then builds an
+# unsigned .ipa and attaches it to the run for sideloading.
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  core-tests:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select the newest Xcode 26
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          xcodebuild -version
+      - name: Core tests
+        run: bash scripts/test-core.sh
+
+  ipa:
+    runs-on: macos-26
+    needs: core-tests
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select the newest Xcode 26
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          xcodebuild -version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Add Firebase config from the repository secret, if set
+        env:
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          if [ -n "$GOOGLE_SERVICE_INFO_PLIST" ]; then
+            echo "$GOOGLE_SERVICE_INFO_PLIST" | base64 --decode > App/Resources/GoogleService-Info.plist
+          else
+            echo "No GOOGLE_SERVICE_INFO_PLIST secret: building without Firebase."
+          fi
+      - name: Build the unsigned IPA
+        run: bash scripts/build-ipa.sh
+      - name: Keep the build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: build/xcodebuild.log
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Goldfish-unsigned-ipa
+          path: build/Goldfish-unsigned.ipa
+          retention-days: 7

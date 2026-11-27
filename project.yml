@@ -1,0 +1,66 @@
+# XcodeGen spec. Run `xcodegen generate` on the Mac to create Goldfish.xcodeproj.
+# The .xcodeproj is generated and git-ignored, because it is regenerated from this file.
+name: Goldfish
+options:
+  bundleIdPrefix: com.kiruu
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+packages:
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk
+    # Hybrid inference needs 12.13.0 or later. Consider pinning an exact version.
+    from: "12.13.0"
+  GoldfishCore:
+    path: Packages/GoldfishCore
+targets:
+  Goldfish:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    settings:
+      base:
+        # Must match the iOS app registered in Firebase (BUNDLE_ID in GoogleService-Info.plist).
+        PRODUCT_BUNDLE_IDENTIFIER: com.kiruu.goldfish
+        PRODUCT_NAME: Goldfish
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Goldfish
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.education
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_PREVIEWS: YES
+        OTHER_LDFLAGS: "$(inherited) -ObjC"
+    dependencies:
+      - package: Firebase
+        product: FirebaseAILogic
+      - package: Firebase
+        product: FirebaseAppCheck
+      - package: Firebase
+        product: FirebaseRemoteConfig
+      # Anonymous profiles, friends, shared chapters and teach-offs.
+      - package: Firebase
+        product: FirebaseAuth
+      - package: Firebase
+        product: FirebaseFirestore
+      - package: GoldfishCore
+schemes:
+  Goldfish:
+    build:
+      targets:
+        Goldfish: all
+    run:
+      config: Debug
+    archive:
+      config: Release
